@@ -2,6 +2,15 @@ const canvas = document.querySelector('canvas');
 canvas.width = innerWidth;
 canvas.height = innerHeight;
 const c = canvas.getContext('2d')
+const scoreEl = document.querySelector('#scoreEl')
+const startGameBtn = document.querySelector('#startGameBtn')
+const scoreModal = document.querySelector('#scoreModal')
+const bigScoreEl = document.querySelector('#bigScoreEl')
+
+// gaming variables to play with
+
+const whiteBloodCellShootingSpeed = 3;
+const enemySpeed = 2
 
 class Player {
     constructor( x, y, radius, color ) {
@@ -104,24 +113,92 @@ class Enemy {
 
 }
 
+// using this number to slow down particles on explosions
+const friction = 0.96
+
+class Particle {
+    constructor( x, y, radius, color, xVelocity, yVelocity ) {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.color = color;
+        this.xVelocity = xVelocity;
+        this.yVelocity = yVelocity;
+        this.alpha = 1
+
+    }
+
+    draw () {
+        c.save()
+        c.globalAlpha = this.alpha
+        c.beginPath(  )
+        // this draws a circle with the x, y, radius, start angle, end angle and draw direction (a boolean, false for clockwise)
+        c.arc(
+            this.x, // x
+            this.y, 
+            this.radius, 
+            0, // start angle - starts at 0
+            Math.PI * 2, // end angle - Math.Pi * 2 is basically 360 degrees OR draw a full circle
+            false
+            )
+        c.fillStyle = this.color;
+        c.fill()
+        c.restore()
+    }
+
+    update () {
+
+        this.draw()
+
+        this.xVelocity *= friction
+        this.yVelocity *= friction
+
+        // by adding these together we will produce movement
+        this.x = this.x + this.xVelocity
+        this.y = this.y + this.yVelocity
+
+        this.alpha -= 0.01
+
+    }
+
+}
+
 // this just helps me find the exact middle of the screen
 const x = canvas.width / 2
 const y = canvas.height / 2
 
 // initialise a new player
-const player = new Player ( x, y, 30, 'white' )
+let player = new Player ( x, y, 10, 'white' )
 
 // multiple instances of the projectiles
-const projectiles = [ ]
+let projectiles = [ ]
 
 // holds each instance of enemy
-const enemies = [ ]
+let enemies = [ ]
+
+// holds our particles
+let particles = [ ]
+
+// reset the game
+function init () {
+
+    player = new Player ( x, y, 10, 'white' );
+    projectiles = [ ];
+    enemies = [ ];
+    particles = [ ];
+    score = 0;
+    scoreEl.innerHTML = score
+    bigScoreEl.innerHTML = score
+
+}
+
 
 function spawnEnemies () {
     setInterval( () => {
 
-        const radius = Math.random() * (30 - 10) + 10;
-        const color = 'green';
+        const radius = Math.random() * (40 - 20) + 20;
+        const greenHue = Math.random() * (175 - 90 + 1) + 90
+        const color = `hsl( ${greenHue} , 50%, 50% )`
 
         let x;
         let y;
@@ -145,11 +222,10 @@ function spawnEnemies () {
             canvas.width / 2 - x
             )
     
-        // console.log(angle)
+        // set enemy speed
+        const xVelocity = Math.cos(angle) * enemySpeed
     
-        const xVelocity = Math.cos(angle)
-    
-        const yVelocity = Math.sin(angle)
+        const yVelocity = Math.sin(angle) * enemySpeed
 
 
         enemies.push(new Enemy ( x, y, radius, color, xVelocity, yVelocity ) )
@@ -158,6 +234,7 @@ function spawnEnemies () {
 }
 
 let animationId;
+let score = 0;
 
 function animate () {
 
@@ -165,15 +242,45 @@ function animate () {
     // this allows us to consistently animate in different spots (emulating movement)
     animationId = requestAnimationFrame(animate);
 
+    // by only adding the fill style 0.1 opacity at a time, it lets the shooting projectiles and enemies have a small tail
+    c.fillStyle = 'rgba(166, 16, 30, 0.1)'
+
     // basically the long lines are still being draw, but this draws a big rectangle of clearing over the entire canvas (when you set the entire width and height) so you only see the individual circle being drawn at each iteration, giving it the look of a single circle moving across the screen
-    c.clearRect( 0, 0, canvas.width, canvas.height)
+    c.fillRect( 0, 0, canvas.width, canvas.height)
 
     // seen as this draws over everything, we need to initialise our player after ever clearing loop
     player.draw()
 
-    projectiles.forEach( projectile => {
+    // for anything we want to put on the screen, we need to loop through it
+
+    particles.forEach( (particle, index) => {
+
+        if (particle.alpha <= 0) {
+            particles.splice( index, 1 )
+        } else {
+            particle.update()
+        }
+    } )
+
+    projectiles.forEach( (projectile, index) => {
 
         projectile.update();
+
+        // if the projectile goes off screen, kill it
+        if (projectile.x + projectile.radius < 0 
+            || projectile.x - projectile.radius > canvas.width 
+            || projectile.y + projectile.radius < 0
+            || projectile.y - projectile.radius > canvas.height
+            ) {
+
+            // see explanation for Timeout later
+            setTimeout(() => {
+
+                    projectiles.splice( index, 1 )
+
+                }, 0)
+
+        }
 
     }
     )
@@ -189,7 +296,10 @@ function animate () {
 
             // end game if enemy collides with human TODO: Give myself 3 lives
             if (dist - enemy.radius - player.radius < 1) {
-                cancelAnimationFrame(animationId)
+
+                cancelAnimationFrame(animationId);
+                scoreModal.style.display = 'flex';
+                bigScoreEl.innerHTML = score
             }
 
         projectiles.forEach( (projectile, projectileIndex) => {
@@ -201,20 +311,58 @@ function animate () {
                 projectile.y - enemy.y
                 )
 
-                // if objects touch
-            if (dist - enemy.radius - projectile.radius < 1) {
+                // when our enemy touches our projectile
+                if (dist - enemy.radius - projectile.radius < 1) {
 
+                    // increase our score
+                    score += 100
+                    scoreEl.innerHTML = score
 
-                // basically if you don't set a timeout (basically forcing it to wait until the next frame to remove the two objects) it looks like its flashing before it leaves the screen as it goes through the array one more time when drawing. The timeout basically just removes that flash
-                setTimeout(() => {
+                    // create explosions
+                    for (let i = 0; i < (enemy.radius / 2); i++) {
 
-                // foreach loops naturally have an index, so if you call it as a second variable you can use it in your foreach loops
-                // here what im doing is saying remove the SPECIFIC enemy at the index point named, and only remove ONE item (the item I've specified)
+                        particles.push(
+                            new Particle (
+                                projectile.x, 
+                                projectile.y, 
+                                Math.random() * 2, 
+                                enemy.color, 
+                                (Math.random() - 0.5) * (Math.random() * 6), 
+                                (Math.random() - 0.5) * (Math.random() * 6)
+                                ) )
 
-                    enemies.splice( index, 1 )
-                    projectiles.splice( projectileIndex, 1 )
+                    }
 
-                }, 0)
+                    // basically if you don't set a timeout (basically forcing it to wait until the next frame to remove the two objects) it looks like its flashing before it leaves the screen as it goes through the array one more time when drawing. The timeout basically just removes that flash
+
+                    if ( enemy.radius > 20) {
+
+                        // using green sock library here to just ease between current radius and defined radius
+                        gsap.to(enemy, {
+                            radius: enemy.radius-10
+                        })
+                        setTimeout(() => {
+            
+                                projectiles.splice( projectileIndex, 1 )
+            
+                            }, 0)
+
+                    } else {
+
+                        // when an enemy is totally destroyed
+                        setTimeout(() => {
+
+                            // foreach loops naturally have an index, so if you call it as a second variable you can use it in your foreach loops
+                            // here what im doing is saying remove the SPECIFIC enemy at the index point named, and only remove ONE item (the item I've specified)
+            
+                                score += 250
+                                scoreEl.innerHTML = score
+                                enemies.splice( index, 1 )
+                                projectiles.splice( projectileIndex, 1 )
+            
+                            }, 0)
+                    }
+
 
             }
 
@@ -226,9 +374,6 @@ function animate () {
 }
 
 addEventListener('click', function (e) {
-
-    // console.log( 'x-position of click: ', e.clientX);
-    // console.log( 'y-position of click: ', e.clientY);
 
     // we need to do some trig here. we need to understand x & y velocity through the following steps
     // 1. get the angle
@@ -244,9 +389,9 @@ addEventListener('click', function (e) {
 
     // console.log(angle)
 
-    const xVelocity = Math.cos(angle)
+    const xVelocity = Math.cos(angle) * whiteBloodCellShootingSpeed
 
-    const yVelocity = Math.sin(angle)
+    const yVelocity = Math.sin(angle) * whiteBloodCellShootingSpeed
 
     projectiles.push(new Projectile (
 
@@ -262,5 +407,9 @@ addEventListener('click', function (e) {
 
 })
 
-animate()
-spawnEnemies()
+startGameBtn.addEventListener('click', function () {
+    init()
+    animate()
+    spawnEnemies()
+    scoreModal.style.display = 'none'
+})

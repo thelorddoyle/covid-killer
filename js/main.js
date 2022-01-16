@@ -373,7 +373,7 @@ function animate () {
 
 }
 
-addEventListener('click', function (e) {
+addEventListener('pointerdown', function (e) {
 
     // we need to do some trig here. we need to understand x & y velocity through the following steps
     // 1. get the angle
